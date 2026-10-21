@@ -1,4 +1,4 @@
-import { createConfig, http } from 'wagmi';
+import { createConfig, http, fallback } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { Web3Auth } from '@web3auth/modal';
 import { CHAIN_NAMESPACES, WEB3AUTH_NETWORK } from '@web3auth/base';
@@ -15,15 +15,16 @@ export * from './tokenConfig';
 
 /**
  * Web3Auth Instance with custom studio dark-mode theming
+ * Default chain set to Base Mainnet (official, fully verified EVM network)
  */
 const chainConfig = {
   chainNamespace: CHAIN_NAMESPACES.EIP155,
-  chainId: `0x${monadNetwork.id.toString(16)}`,
-  rpcTarget: 'https://testnet-rpc.monad.xyz',
-  displayName: 'Monad Network',
-  blockExplorerUrl: 'https://testnet.monadexplorer.com',
-  ticker: 'MON',
-  tickerName: 'Monad',
+  chainId: `0x${baseChain.id.toString(16)}`,
+  rpcTarget: 'https://mainnet.base.org',
+  displayName: 'Base Mainnet',
+  blockExplorerUrl: 'https://basescan.org',
+  ticker: 'ETH',
+  tickerName: 'Ethereum',
 };
 
 const privateKeyProvider = new EthereumPrivateKeyProvider({
@@ -40,7 +41,7 @@ export const web3AuthInstance = new Web3Auth({
     WEB3AUTH_NETWORK.SAPPHIRE_DEVNET,
   privateKeyProvider: privateKeyProvider as any,
   uiConfig: {
-    appName: '3D Studio',
+    appName: 'Vectra 3D Studio',
     mode: 'dark',
     theme: {
       primary: '#FFFFFF',
@@ -59,19 +60,22 @@ if (!(web3AuthInstance as any).initModal) {
 }
 
 /**
- * Wagmi Multi-Chain Client Configuration with Web3AuthConnector & Injected fallback
+ * Wagmi Multi-Chain Client Configuration with Injected (MetaMask) & Web3Auth fallback
  */
 export const wagmiConfig = createConfig({
-  chains: [monadNetwork, baseChain, robinhoodTestnet],
+  chains: [baseChain, monadNetwork, robinhoodTestnet],
   connectors: [
+    injected(),
     Web3AuthConnector({
       web3AuthInstance,
     }),
-    injected(),
   ],
   transports: {
-    [monadNetwork.id]: http('https://rpc.monad.xyz'),
     [baseChain.id]: http('https://mainnet.base.org'),
+    [monadNetwork.id]: fallback([
+      http('https://rpc-mainnet.monadinfra.com'),
+      http('https://rpc3.monad.xyz'),
+    ]),
     [robinhoodTestnet.id]: http('https://rpc.testnet.chain.robinhood.com'),
   },
 });

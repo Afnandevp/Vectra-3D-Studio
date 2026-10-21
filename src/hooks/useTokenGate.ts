@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
-import { createPublicClient, http, fallback } from 'viem';
+import { createPublicClient, http, fallback, defineChain } from 'viem';
 import {
   BALANCE_OF_ABI,
   baseChain,
@@ -55,8 +55,25 @@ const robinhoodClient = createPublicClient({
 const monadClient = createPublicClient({
   chain: monadNetwork,
   transport: fallback([
-    http('https://rpc.monad.xyz'),
-    http('https://testnet-rpc.monad.xyz'),
+    http('https://rpc-mainnet.monadinfra.com'),
+    http('https://rpc3.monad.xyz'),
+  ]),
+});
+
+const monadTestnetChain = defineChain({
+  id: 10143,
+  name: 'Monad Testnet',
+  nativeCurrency: { decimals: 18, name: 'Monad', symbol: 'MON' },
+  rpcUrls: {
+    default: { http: ['https://rpc.ankr.com/monad_testnet', 'https://rpc-testnet.monadinfra.com'] },
+  },
+});
+
+const monadTestnetClient = createPublicClient({
+  chain: monadTestnetChain,
+  transport: fallback([
+    http('https://rpc.ankr.com/monad_testnet'),
+    http('https://rpc-testnet.monadinfra.com'),
   ]),
 });
 
@@ -174,10 +191,11 @@ export function useTokenGate(): TokenGateState {
         }
       });
 
-      // 3. Check Monad Mainnet Assets (Chog Token, Chog NFT)
+      // 3. Check Monad Mainnet & Testnet Assets (Chog Token, Chog NFT)
       const monadTokenChecks = GATED_MULTI_CHAIN_ASSETS.filter(
         (a) => a.chainName === 'Monad'
       ).map(async (asset) => {
+        // Step A: Check Monad Mainnet
         try {
           const bal = (await monadClient.readContract({
             address: asset.address,
@@ -191,10 +209,46 @@ export function useTokenGate(): TokenGateState {
             return;
           }
         } catch {
-          // If Monad call fails, check Base as fallback
+          // Fall through to testnet / cross-chain check
         }
 
-        // Fallback check on Base in case user holds cross-chain replica
+        // Step B: Check Monad Testnet with standard contract address
+        try {
+          const testnetBal = (await monadTestnetClient.readContract({
+            address: asset.address,
+            abi: BALANCE_OF_ABI,
+            functionName: 'balanceOf',
+            args: [user],
+          })) as bigint;
+
+          if (testnetBal > 0n) {
+            detectedIds.push(asset.id);
+            return;
+          }
+        } catch {
+          // Ignored
+        }
+
+        // Step C: Check known Monad Testnet alternative contract for CHOG
+        if (asset.id === 'chog-token') {
+          try {
+            const chogTestnetAltBal = (await monadTestnetClient.readContract({
+              address: '0xE0590015A873bF326bd645c3E1266d4db41C4E6B',
+              abi: BALANCE_OF_ABI,
+              functionName: 'balanceOf',
+              args: [user],
+            })) as bigint;
+
+            if (chogTestnetAltBal > 0n) {
+              detectedIds.push(asset.id);
+              return;
+            }
+          } catch {
+            // Ignored
+          }
+        }
+
+        // Step D: Fallback check on Base in case user holds cross-chain replica
         try {
           const baseBal = (await baseClient.readContract({
             address: asset.address,

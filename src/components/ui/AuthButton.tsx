@@ -7,8 +7,11 @@ export const AuthButton: React.FC = () => {
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
 
-  // Target the direct Web3Auth / MetaMask Embedded Connector directly
-  const targetConnector = connectors.find((c) => c.id === 'web3auth') || connectors[0];
+  // Prioritize direct native injected MetaMask connector if available to avoid iframe proxy
+  const injectedConnector = connectors.find((c) => c.id === 'injected');
+  const web3AuthConnector = connectors.find((c) => c.id === 'web3auth');
+  const hasInjected = typeof window !== 'undefined' && Boolean((window as any).ethereum);
+  const targetConnector = (hasInjected ? injectedConnector : web3AuthConnector) || connectors[0];
 
   // Auto-synchronize on mount if MetaMask is already connected (e.g. green dot in extension)
   useEffect(() => {

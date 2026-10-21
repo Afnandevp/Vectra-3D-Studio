@@ -56,14 +56,14 @@ export const monadNetwork = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ['https://rpc.monad.xyz'],
+      http: ['https://rpc-mainnet.monadinfra.com', 'https://rpc3.monad.xyz'],
     },
     public: {
-      http: ['https://rpc.monad.xyz'],
+      http: ['https://rpc-mainnet.monadinfra.com', 'https://rpc3.monad.xyz'],
     },
   },
   blockExplorers: {
-    default: { name: 'Monad Explorer', url: 'https://monad.xyz' },
+    default: { name: 'Monadscan', url: 'https://monadscan.com' },
   },
   testnet: false,
 });
