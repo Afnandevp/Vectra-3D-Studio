@@ -38,9 +38,10 @@ export const Providers: React.FC<ProvidersProps> = ({ children }) => {
           theme: 'dark',
           accentColor: '#FFFFFF',
           logo: undefined,
-          showWalletLoginFirst: false,
+          showWalletLoginFirst: true,
+          walletList: ['metamask', 'coinbase_wallet', 'rainbow', 'wallet_connect'],
         },
-        loginMethods: ['email', 'google', 'wallet'],
+        loginMethods: ['wallet', 'google', 'email'],
         embeddedWallets: {
           ethereum: {
             createOnLogin: 'users-without-wallets',

@@ -1,13 +1,24 @@
 import React from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useDisconnect } from 'wagmi';
 import { Wallet, LogOut, Loader2 } from 'lucide-react';
 
 /**
- * Top Navigation Auth Button using Privy
+ * Top Navigation Auth Button using Privy & Wagmi
  * Styled with minimal glassmorphic pill aesthetics.
  */
 export const HeaderAuth: React.FC = () => {
   const { ready, authenticated, user, login, logout } = usePrivy();
+  const { disconnect } = useDisconnect();
+
+  const handleLogout = async () => {
+    try {
+      disconnect();
+    } catch {}
+    try {
+      await logout();
+    } catch {}
+  };
 
   // Glassmorphic styling specified by design requirements:
   const pillBaseClass =
@@ -31,7 +42,7 @@ export const HeaderAuth: React.FC = () => {
     return (
       <button
         type="button"
-        onClick={logout}
+        onClick={handleLogout}
         className={`${pillBaseClass} hover:border-white/20 hover:text-white group`}
         title="Click to disconnect"
       >

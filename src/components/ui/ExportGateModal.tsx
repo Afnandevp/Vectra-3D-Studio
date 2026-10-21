@@ -6,9 +6,10 @@ import {
   Wallet, 
   CheckCircle2, 
   Minus,
-  Loader2 
+  ArrowRightLeft
 } from 'lucide-react';
-import { useConnect, useDisconnect } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
+import { usePrivy } from '@privy-io/react-auth';
 import { 
   ALL_MULTI_CHAIN_ACCEPTED_ASSETS 
 } from '../../config/tokenConfig';
@@ -41,8 +42,9 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
     confirmSessionVerification
   } = useTokenGate();
 
-  const { connect, connectors, isPending: isConnecting } = useConnect();
+  const { connector } = useAccount();
   const { disconnect } = useDisconnect();
+  const { login, logout, user, connectWallet } = usePrivy();
 
   // Fresh live balance check whenever modal opens
   useEffect(() => {
@@ -50,9 +52,6 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
       refetch();
     }
   }, [isOpen, isConnected, refetch]);
-
-  // Target the Web3Auth connector directly (opens the full Web3Auth login modal)
-  const targetConnector = connectors.find((c) => c.id === 'web3auth') || connectors[0];
 
   if (!isOpen) return null;
 
@@ -66,9 +65,30 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
     ? `${address.slice(0, 6)}...${address.slice(-4)}` 
     : '';
 
+  // Determine connected wallet source
+  const walletType =
+    user?.wallet?.walletClientType === 'privy'
+      ? 'Privy Embedded'
+      : connector?.name || (user?.wallet?.walletClientType ? user.wallet.walletClientType.toUpperCase() : 'MetaMask');
+
+  const handleDisconnect = async () => {
+    try {
+      disconnect();
+    } catch {}
+    try {
+      await logout();
+    } catch {}
+  };
+
   const handleConnect = () => {
-    if (targetConnector) {
-      connect({ connector: targetConnector });
+    login();
+  };
+
+  const handleSwitchWallet = () => {
+    if (connectWallet) {
+      connectWallet();
+    } else {
+      login();
     }
   };
 
@@ -132,15 +152,18 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
         </p>
 
         {/* Connected Wallet Status Bar */}
-        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.06] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Wallet className="w-3.5 h-3.5 text-white/40 shrink-0" />
-            <div className="text-[11px]">
+            <div className="text-[11px] min-w-0">
               {isConnected ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono text-white/85 font-medium">{truncatedAddress}</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                     Connected
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono text-white/60 bg-white/[0.04] border border-white/10 shrink-0">
+                    {walletType}
                   </span>
                 </div>
               ) : (
@@ -149,29 +172,37 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
             </div>
           </div>
 
-          {isConnected ? (
-            <button
-              type="button"
-              onClick={() => disconnect()}
-              className="text-[10px] font-mono text-white/40 hover:text-white/80 transition-colors"
-            >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={isConnecting}
-              onClick={handleConnect}
-              className="px-3 py-1 text-[11px] font-medium rounded-md bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {isConnecting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-white/60 shrink-0" />
-              ) : (
+          <div className="flex items-center gap-3 shrink-0">
+            {isConnected ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleSwitchWallet}
+                  className="text-[10px] font-mono text-white/60 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Connect MetaMask or switch wallet"
+                >
+                  <ArrowRightLeft className="w-3 h-3" />
+                  <span>Switch</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  className="text-[10px] font-mono text-white/40 hover:text-red-400 transition-colors cursor-pointer"
+                >
+                  Disconnect
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnect}
+                className="px-3 py-1 text-[11px] font-medium rounded-md bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white transition-all flex items-center gap-1.5 cursor-pointer"
+              >
                 <Wallet className="w-3.5 h-3.5 text-white/70 shrink-0" />
-              )}
-              <span>{isConnecting ? 'Opening...' : 'Connect Wallet'}</span>
-            </button>
-          )}
+                <span>Connect Wallet</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Accepted Assets Checklist */}
