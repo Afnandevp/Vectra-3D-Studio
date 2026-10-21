@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
-import { createPublicClient, http, fallback, defineChain } from 'viem';
+import { createPublicClient, http, fallback } from 'viem';
 import {
   BALANCE_OF_ABI,
   baseChain,
@@ -60,22 +60,65 @@ const monadClient = createPublicClient({
   ]),
 });
 
-const monadTestnetChain = defineChain({
-  id: 10143,
-  name: 'Monad Testnet',
-  nativeCurrency: { decimals: 18, name: 'Monad', symbol: 'MON' },
-  rpcUrls: {
-    default: { http: ['https://rpc.ankr.com/monad_testnet', 'https://rpc-testnet.monadinfra.com'] },
-  },
-});
 
-const monadTestnetClient = createPublicClient({
-  chain: monadTestnetChain,
-  transport: fallback([
-    http('https://rpc.ankr.com/monad_testnet'),
-    http('https://rpc-testnet.monadinfra.com'),
-  ]),
-});
+/**
+ * Direct low-latency JSON-RPC eth_call balance query with 4s abort controller.
+ * Eliminates Viem fallback health-check ping overhead and CORS delays.
+ */
+async function fetchErc20BalanceDirect(
+  rpcUrls: string[],
+  contractAddress: string,
+  userAddress: string
+): Promise<bigint> {
+  const cleanUser = userAddress.toLowerCase().replace('0x', '').padStart(64, '0');
+  const callData = `0x70a08231${cleanUser}`;
+
+  for (const rpc of rpcUrls) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(rpc, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_call',
+          params: [{ to: contractAddress, data: callData }, 'latest'],
+        }),
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.result && json.result !== '0x') {
+          const bal = BigInt(json.result);
+          if (bal > 0n) return bal;
+        }
+      }
+    } catch {
+      // Continue to next RPC
+    }
+  }
+
+  // Also query directly through window.ethereum provider if active
+  if (typeof window !== 'undefined' && (window as any).ethereum?.request) {
+    try {
+      const raw = await (window as any).ethereum.request({
+        method: 'eth_call',
+        params: [{ to: contractAddress, data: callData }, 'latest'],
+      });
+      if (raw && raw !== '0x') {
+        const bal = BigInt(raw);
+        if (bal > 0n) return bal;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  return 0n;
+}
 
 /**
  * Multi-chain verification hook that reliably queries contract balances (ERC-20 / ERC-721)
@@ -185,6 +228,7 @@ export function useTokenGate(): TokenGateState {
 
           if (bal > 0n) {
             detectedIds.push(asset.id);
+            setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
           }
         } catch {
           // Graceful handling of individual asset RPC latency
@@ -192,10 +236,47 @@ export function useTokenGate(): TokenGateState {
       });
 
       // 3. Check Monad Mainnet & Testnet Assets (Chog Token, Chog NFT)
+      const monadRpcs = [
+        'https://rpc-mainnet.monadinfra.com',
+        'https://rpc3.monad.xyz',
+        'https://rpc.ankr.com/monad_testnet',
+        'https://rpc-testnet.monadinfra.com',
+      ];
+
       const monadTokenChecks = GATED_MULTI_CHAIN_ASSETS.filter(
         (a) => a.chainName === 'Monad'
       ).map(async (asset) => {
-        // Step A: Check Monad Mainnet
+        // Step A: Ultra-fast direct JSON-RPC query on live Monad nodes
+        try {
+          const directBal = await fetchErc20BalanceDirect(monadRpcs, asset.address, user);
+          if (directBal > 0n) {
+            detectedIds.push(asset.id);
+            setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
+            return;
+          }
+        } catch {
+          // Continue to next check
+        }
+
+        // Step B: For Chog Token, also check known alternative testnet/community contract
+        if (asset.id === 'chog-token') {
+          try {
+            const chogAltBal = await fetchErc20BalanceDirect(
+              monadRpcs,
+              '0xE0590015A873bF326bd645c3E1266d4db41C4E6B',
+              user
+            );
+            if (chogAltBal > 0n) {
+              detectedIds.push(asset.id);
+              setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
+              return;
+            }
+          } catch {
+            // Ignored
+          }
+        }
+
+        // Step C: Viem client readContract as secondary verification
         try {
           const bal = (await monadClient.readContract({
             address: asset.address,
@@ -206,46 +287,11 @@ export function useTokenGate(): TokenGateState {
 
           if (bal > 0n) {
             detectedIds.push(asset.id);
+            setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
             return;
           }
         } catch {
-          // Fall through to testnet / cross-chain check
-        }
-
-        // Step B: Check Monad Testnet with standard contract address
-        try {
-          const testnetBal = (await monadTestnetClient.readContract({
-            address: asset.address,
-            abi: BALANCE_OF_ABI,
-            functionName: 'balanceOf',
-            args: [user],
-          })) as bigint;
-
-          if (testnetBal > 0n) {
-            detectedIds.push(asset.id);
-            return;
-          }
-        } catch {
-          // Ignored
-        }
-
-        // Step C: Check known Monad Testnet alternative contract for CHOG
-        if (asset.id === 'chog-token') {
-          try {
-            const chogTestnetAltBal = (await monadTestnetClient.readContract({
-              address: '0xE0590015A873bF326bd645c3E1266d4db41C4E6B',
-              abi: BALANCE_OF_ABI,
-              functionName: 'balanceOf',
-              args: [user],
-            })) as bigint;
-
-            if (chogTestnetAltBal > 0n) {
-              detectedIds.push(asset.id);
-              return;
-            }
-          } catch {
-            // Ignored
-          }
+          // Viem fallback
         }
 
         // Step D: Fallback check on Base in case user holds cross-chain replica
@@ -259,6 +305,7 @@ export function useTokenGate(): TokenGateState {
 
           if (baseBal > 0n) {
             detectedIds.push(asset.id);
+            setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
           }
         } catch {
           // Ignored
@@ -279,6 +326,7 @@ export function useTokenGate(): TokenGateState {
 
           if (bal > 0n) {
             detectedIds.push(asset.id);
+            setHeldAssetIds((prev) => (prev.includes(asset.id) ? prev : [...prev, asset.id]));
           }
         } catch {
           // Graceful handling of individual asset RPC latency
