@@ -7,19 +7,12 @@ export interface Web3AuthConnectorParams {
 }
 
 /**
- * Universal Wagmi connector uniting Web3Auth and MetaMask / Injected provider.
- * Automatically synchronizes with already-connected MetaMask accounts on localhost
- * and seamlessly opens the official "Powered by MetaMask" Web3Auth modal when requested.
+ * Official Web3Auth Wagmi Connector
+ * Opens the full Web3Auth modal with Social Login (Google, Discord, Email, Twitter)
+ * and External Wallets (MetaMask, Coinbase, WalletConnect).
  */
 export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams) {
   let initPromise: Promise<void> | null = null;
-
-  const getInjectedEthereum = () => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      return (window as any).ethereum;
-    }
-    return null;
-  };
 
   const ensureInitialized = async () => {
     if (web3AuthInstance.status === 'ready' || web3AuthInstance.status === 'connected') {
@@ -30,20 +23,23 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
     }
 
     const timeoutPromise = new Promise<void>((_, reject) => {
-      setTimeout(() => reject(new Error('Web3Auth initialization timed out.')), 8000);
+      setTimeout(() => reject(new Error('Web3Auth initialization timed out.')), 10000);
     });
 
-    initPromise = Promise.race([web3AuthInstance.init(), timeoutPromise])
-      .catch((err) => {
-        initPromise = null;
-        console.warn('Web3Auth init warning:', err);
-        throw err;
-      });
+    const initCall = (web3AuthInstance as any).initModal
+      ? (web3AuthInstance as any).initModal()
+      : web3AuthInstance.init();
+
+    initPromise = Promise.race([initCall, timeoutPromise]).catch((err) => {
+      initPromise = null;
+      console.warn('Web3Auth init warning:', err);
+      throw err;
+    });
 
     return initPromise;
   };
 
-  // Eagerly pre-load Web3Auth modal on startup
+  // Pre-load Web3Auth modal on startup
   if (typeof window !== 'undefined') {
     ensureInitialized().catch(() => {});
   }
@@ -57,35 +53,6 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
       try {
         config.emitter.emit('message', { type: 'connecting' });
 
-        const injected = getInjectedEthereum();
-
-        // 1. Check if MetaMask is ALREADY authorized on this site (e.g. green dot in extension)
-        if (injected) {
-          try {
-            const currentAccounts = (await injected.request({ method: 'eth_accounts' })) as string[];
-            if (currentAccounts && currentAccounts.length > 0) {
-              const currentChainId = await this.getChainId();
-              const accounts = currentAccounts.map((x) => getAddress(x));
-
-              try {
-                injected.on?.('accountsChanged', this.onAccountsChanged);
-                injected.on?.('chainChanged', this.onChainChanged);
-                injected.on?.('disconnect', this.onDisconnect.bind(this));
-              } catch (e) {
-                console.warn('Could not attach injected listeners:', e);
-              }
-
-              return {
-                accounts: accounts as any,
-                chainId: currentChainId,
-              };
-            }
-          } catch (e) {
-            console.warn('Checking existing injected accounts failed, proceeding to modal:', e);
-          }
-        }
-
-        // 2. If not already connected, ensure modal is initialized and bring to front
         await ensureInitialized();
 
         if (typeof document !== 'undefined') {
@@ -96,44 +63,32 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
           }
         }
 
-        // 3. Directly launch the official "Powered by MetaMask" login modal
+        // Open the Web3Auth Modal
         if (!web3AuthInstance.connected) {
           await web3AuthInstance.connect();
         }
 
-        const provider = (web3AuthInstance.provider || injected) as any;
+        const provider = web3AuthInstance.provider as any;
         if (!provider) {
-          // If modal completed, try checking if injected accounts were granted
-          if (injected) {
-            const newlyGranted = (await injected.request({ method: 'eth_accounts' })) as string[];
-            if (newlyGranted && newlyGranted.length > 0) {
-              const accounts = newlyGranted.map((x) => getAddress(x));
-              const currentChainId = await this.getChainId();
-              return { accounts: accounts as any, chainId: currentChainId };
-            }
-          }
           throw new UserRejectedRequestError(new Error('User closed login modal.'));
         }
 
-        // 4. Attach event listeners
+        // Attach event listeners
         try {
           if (provider?.on) {
             provider.on('accountsChanged', this.onAccountsChanged);
             provider.on('chainChanged', this.onChainChanged);
-            provider.on('disconnect', this.onDisconnect.bind(this));
           }
         } catch (e) {
           console.warn('Could not attach provider event listeners:', e);
         }
 
-        // 5. Resolve chain ID
         let currentChainId = await this.getChainId();
         if (parameters?.chainId && currentChainId !== parameters.chainId) {
           const chain = await this.switchChain({ chainId: parameters.chainId }).catch(() => ({ id: currentChainId }));
           if (chain?.id) currentChainId = chain.id;
         }
 
-        // 6. Resolve connected account
         const accounts = await this.getAccounts();
         return {
           accounts: accounts as any,
@@ -147,15 +102,13 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
         ) {
           throw new UserRejectedRequestError(error);
         }
-        console.error('Connection error:', error);
+        console.error('Web3Auth connection error:', error);
         throw error;
       }
     },
 
     async getAccounts() {
-      const injected = getInjectedEthereum();
-      // First try Web3Auth's provider, fallback to window.ethereum (MetaMask)
-      const provider = (web3AuthInstance.provider || injected) as any;
+      const provider = web3AuthInstance.provider as any;
       if (!provider) return [];
       try {
         const accounts = (await provider.request({ method: 'eth_accounts' })) as `0x${string}`[];
@@ -166,8 +119,7 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
     },
 
     async getChainId() {
-      const injected = getInjectedEthereum();
-      const provider = (web3AuthInstance.provider || injected) as any;
+      const provider = web3AuthInstance.provider as any;
       if (!provider) {
         return config.chains[0].id;
       }
@@ -180,14 +132,16 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
     },
 
     async getProvider() {
-      return web3AuthInstance.provider || getInjectedEthereum();
+      return web3AuthInstance.provider;
     },
 
     async isAuthorized() {
       try {
-        if (web3AuthInstance.connected) return true;
-        const accounts = await this.getAccounts();
-        return accounts.length > 0;
+        if (web3AuthInstance.connected && web3AuthInstance.provider) {
+          const accounts = await this.getAccounts();
+          return accounts.length > 0;
+        }
+        return false;
       } catch {
         return false;
       }
@@ -196,8 +150,7 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
     async switchChain({ chainId }) {
       const chain = config.chains.find((x) => x.id === chainId);
       if (!chain) throw new SwitchChainError(new Error('Chain not configured'));
-      const injected = getInjectedEthereum();
-      const provider = (web3AuthInstance.provider || injected) as any;
+      const provider = web3AuthInstance.provider as any;
       try {
         if (web3AuthInstance.connected) {
           await web3AuthInstance.switchChain({
@@ -218,17 +171,11 @@ export function Web3AuthConnector({ web3AuthInstance }: Web3AuthConnectorParams)
 
     async disconnect() {
       try {
-        const injected = getInjectedEthereum();
-        const provider = (web3AuthInstance.provider || injected) as any;
-        if (provider?.removeListener) {
-          provider.removeListener('accountsChanged', this.onAccountsChanged);
-          provider.removeListener('chainChanged', this.onChainChanged);
-        }
         if (web3AuthInstance.connected) {
           await web3AuthInstance.logout();
         }
       } catch (error) {
-        console.warn('Error during logout:', error);
+        console.warn('Error during Web3Auth logout:', error);
       } finally {
         config.emitter.emit('disconnect');
       }

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { Wallet, LogOut, Loader2 } from 'lucide-react';
 
@@ -7,30 +7,17 @@ export const AuthButton: React.FC = () => {
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
 
-  // Prioritize direct native injected MetaMask connector if available to avoid iframe proxy
-  const injectedConnector = connectors.find((c) => c.id === 'injected');
-  const web3AuthConnector = connectors.find((c) => c.id === 'web3auth');
-  const hasInjected = typeof window !== 'undefined' && Boolean((window as any).ethereum);
-  const targetConnector = (hasInjected ? injectedConnector : web3AuthConnector) || connectors[0];
-
-  // Auto-synchronize on mount if MetaMask is already connected (e.g. green dot in extension)
-  useEffect(() => {
-    if (!isConnected && typeof window !== 'undefined' && (window as any).ethereum && targetConnector) {
-      (window as any).ethereum
-        .request({ method: 'eth_accounts' })
-        .then((accounts: string[]) => {
-          if (accounts && accounts.length > 0) {
-            connect({ connector: targetConnector });
-          }
-        })
-        .catch(() => {});
-    }
-  }, [isConnected, targetConnector, connect]);
+  // Target the Web3Auth connector directly (opens the full Web3Auth login modal)
+  const targetConnector = connectors.find((c) => c.id === 'web3auth') || connectors[0];
 
   const handleConnect = () => {
     if (targetConnector) {
       connect({ connector: targetConnector });
     }
+  };
+
+  const handleDisconnect = () => {
+    disconnect();
   };
 
   const truncatedAddress = address
@@ -44,7 +31,7 @@ export const AuthButton: React.FC = () => {
     return (
       <button
         type="button"
-        onClick={() => disconnect()}
+        onClick={handleDisconnect}
         className="group flex items-center gap-2 px-3.5 py-1.5 bg-white/[0.04] border border-white/10 rounded-full text-xs text-white/80 hover:bg-white/10 hover:border-white/20 transition-all select-none cursor-pointer shrink-0"
         title="Click to disconnect"
       >

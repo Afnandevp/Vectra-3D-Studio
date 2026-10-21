@@ -129,46 +129,13 @@ async function fetchErc20BalanceDirect(
  * Users must verify that they are holding qualifying assets in the modal before full export access is unlocked.
  */
 export function useTokenGate(): TokenGateState {
-  const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
-
-  // Also support injected address directly if Wagmi's session sync is in-flight
-  const [injectedAddress, setInjectedAddress] = useState<`0x${string}` | undefined>(undefined);
+  const { address, isConnected } = useAccount();
 
   // In-memory session verification state (resets on page reload / revisit)
   const isSessionVerified = useLogoStore((s) => s.isSessionVerified);
   const setIsSessionVerified = useLogoStore((s) => s.setIsSessionVerified);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      const eth = (window as any).ethereum;
-      eth
-        .request({ method: 'eth_accounts' })
-        .then((accounts: string[]) => {
-          if (accounts && accounts[0]) {
-            setInjectedAddress(accounts[0] as `0x${string}`);
-          }
-        })
-        .catch(() => {});
-
-      const handleAccountsChanged = (accounts: string[]) => {
-        if (accounts && accounts[0]) {
-          setInjectedAddress(accounts[0] as `0x${string}`);
-        } else {
-          setInjectedAddress(undefined);
-        }
-        // Account changed -> require re-verification
-        setIsSessionVerified(false);
-      };
-
-      eth.on?.('accountsChanged', handleAccountsChanged);
-      return () => {
-        eth.removeListener?.('accountsChanged', handleAccountsChanged);
-      };
-    }
-  }, [setIsSessionVerified]);
-
-  const activeAddress = (wagmiAddress || injectedAddress) as `0x${string}` | undefined;
-  const isConnected = Boolean(isWagmiConnected || (injectedAddress && injectedAddress.length === 42));
+  const activeAddress = address;
 
   // Invalidate session verification if address changes or disconnects
   const prevAddressRef = useRef<string | undefined>(undefined);

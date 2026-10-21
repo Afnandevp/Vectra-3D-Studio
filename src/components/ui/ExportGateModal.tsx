@@ -51,25 +51,8 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
     }
   }, [isOpen, isConnected, refetch]);
 
-  // Prioritize direct native injected MetaMask connector if available
-  const injectedConnector = connectors.find((c) => c.id === 'injected');
-  const web3AuthConnector = connectors.find((c) => c.id === 'web3auth');
-  const hasInjected = typeof window !== 'undefined' && Boolean((window as any).ethereum);
-  const targetConnector = (hasInjected ? injectedConnector : web3AuthConnector) || connectors[0];
-
-  // Auto-synchronize if MetaMask is already connected (e.g. green dot in extension)
-  useEffect(() => {
-    if (!isConnected && typeof window !== 'undefined' && (window as any).ethereum && targetConnector) {
-      (window as any).ethereum
-        .request({ method: 'eth_accounts' })
-        .then((accounts: string[]) => {
-          if (accounts && accounts.length > 0) {
-            connect({ connector: targetConnector });
-          }
-        })
-        .catch(() => {});
-    }
-  }, [isConnected, targetConnector, connect]);
+  // Target the Web3Auth connector directly (opens the full Web3Auth login modal)
+  const targetConnector = connectors.find((c) => c.id === 'web3auth') || connectors[0];
 
   if (!isOpen) return null;
 
