@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useLogoStore } from '../../store/useLogoStore';
 import { PRESET_SVGS } from '../../constants/presets';
-import { AuthButton } from './AuthButton';
+import { HeaderAuth } from './HeaderAuth';
 import { HowToUseModal } from './HowToUseModal';
 
 export const Header: React.FC = () => {
@@ -122,7 +122,7 @@ export const Header: React.FC = () => {
 
         {/* Dedicated Fixed Wrapper for Wallet Button */}
         <div className="shrink-0 flex items-center">
-          <AuthButton />
+          <HeaderAuth />
         </div>
       </div>
 
