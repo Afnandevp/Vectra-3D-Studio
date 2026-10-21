@@ -64,11 +64,14 @@ if (!(web3AuthInstance as any).initModal) {
  */
 export const wagmiConfig = createConfig({
   chains: [baseChain, monadNetwork, robinhoodTestnet],
+  multiInjectedProviderDiscovery: true,
   connectors: [
+    injected({
+      shimDisconnect: true,
+    }),
     Web3AuthConnector({
       web3AuthInstance,
     }),
-    injected(),
   ],
   transports: {
     [baseChain.id]: http('https://mainnet.base.org'),

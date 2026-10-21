@@ -23,7 +23,7 @@ export interface ProvidersProps {
  */
 export const Providers: React.FC<ProvidersProps> = ({ children }) => {
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} reconnectOnMount={true}>
       <QueryClientProvider client={queryClient}>
         {children}
       </QueryClientProvider>
