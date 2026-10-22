@@ -5,11 +5,11 @@ import {
   RefreshCw, 
   Wallet, 
   CheckCircle2, 
-  Minus,
-  ArrowRightLeft
+  Minus 
 } from 'lucide-react';
-import { useAccount, useDisconnect } from 'wagmi';
-import { usePrivy } from '@privy-io/react-auth';
+import { useDisconnect as useWagmiDisconnect } from 'wagmi';
+import { useActiveWallet, useDisconnect as useThirdwebDisconnect, ConnectButton } from 'thirdweb/react';
+import { thirdwebClient, thirdwebWallets, thirdwebTheme } from '../../config/thirdweb';
 import { 
   ALL_MULTI_CHAIN_ACCEPTED_ASSETS 
 } from '../../config/tokenConfig';
@@ -37,14 +37,14 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
     isChecking, 
     isConnected, 
     address, 
-    heldAssetIds,
+    heldAssetIds, 
     refetch,
     confirmSessionVerification
   } = useTokenGate();
 
-  const { connector } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { login, logout, user, connectWallet } = usePrivy();
+  const thirdwebWallet = useActiveWallet();
+  const { disconnect: thirdwebDisconnect } = useThirdwebDisconnect();
+  const { disconnect: wagmiDisconnect } = useWagmiDisconnect();
 
   // Fresh live balance check whenever modal opens
   useEffect(() => {
@@ -67,29 +67,21 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
 
   // Determine connected wallet source
   const walletType =
-    user?.wallet?.walletClientType === 'privy'
-      ? 'Privy Embedded'
-      : connector?.name || (user?.wallet?.walletClientType ? user.wallet.walletClientType.toUpperCase() : 'MetaMask');
+    thirdwebWallet?.id === 'inApp'
+      ? 'In-App Wallet'
+      : thirdwebWallet?.id === 'io.metamask'
+      ? 'MetaMask'
+      : thirdwebWallet?.id || 'Connected';
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = () => {
     try {
-      disconnect();
+      if (thirdwebWallet) {
+        thirdwebDisconnect(thirdwebWallet);
+      }
     } catch {}
     try {
-      await logout();
+      wagmiDisconnect();
     } catch {}
-  };
-
-  const handleConnect = () => {
-    login();
-  };
-
-  const handleSwitchWallet = () => {
-    if (connectWallet) {
-      connectWallet();
-    } else {
-      login();
-    }
   };
 
   const getChainBadgeStyle = (chainName: 'Monad' | 'Base' | 'Robinhood') => {
@@ -174,33 +166,29 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
 
           <div className="flex items-center gap-3 shrink-0">
             {isConnected ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSwitchWallet}
-                  className="text-[10px] font-mono text-white/60 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Connect MetaMask or switch wallet"
-                >
-                  <ArrowRightLeft className="w-3 h-3" />
-                  <span>Switch</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDisconnect}
-                  className="text-[10px] font-mono text-white/40 hover:text-red-400 transition-colors cursor-pointer"
-                >
-                  Disconnect
-                </button>
-              </>
-            ) : (
               <button
                 type="button"
-                onClick={handleConnect}
-                className="px-3 py-1 text-[11px] font-medium rounded-md bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white transition-all flex items-center gap-1.5 cursor-pointer"
+                onClick={handleDisconnect}
+                className="text-[10px] font-mono text-white/40 hover:text-red-400 transition-colors cursor-pointer"
               >
-                <Wallet className="w-3.5 h-3.5 text-white/70 shrink-0" />
-                <span>Connect Wallet</span>
+                Disconnect
               </button>
+            ) : (
+              <ConnectButton
+                client={thirdwebClient}
+                wallets={thirdwebWallets}
+                theme={thirdwebTheme}
+                connectButton={{
+                  className:
+                    '!px-3 !py-1 !text-[11px] !font-medium !rounded-md !bg-white/[0.08] hover:!bg-white/[0.14] !border !border-white/10 !text-white !transition-all !cursor-pointer',
+                  label: 'Connect Wallet',
+                }}
+                connectModal={{
+                  size: 'compact',
+                  title: 'Connect to Vectra',
+                  showThirdwebBranding: false,
+                }}
+              />
             )}
           </div>
         </div>
@@ -230,32 +218,28 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
                     {/* Holding Indicator: Green checkmark if held, subtle dash if 0 */}
                     <div className="w-4 flex items-center justify-center shrink-0">
                       {isHeld ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : isConnected && !isChecking ? (
-                        <Minus className="w-3.5 h-3.5 text-white/20 shrink-0" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 fill-emerald-400/10" />
                       ) : (
-                        <div className="w-1.5 h-1.5 rounded-full bg-white/20 shrink-0" />
+                        <Minus className="w-3.5 h-3.5 text-white/20" />
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 truncate">
-                      <span className={`text-[12px] truncate ${isHeld ? 'text-white font-medium' : 'text-white/70'}`}>
+                    <div className="flex items-center gap-2 min-w-0 truncate">
+                      <span className={`font-medium truncate ${isHeld ? 'text-white' : 'text-white/60'}`}>
                         {asset.name}
                       </span>
-
-                      {/* Minimal Token Badge */}
-                      <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-white/60 shrink-0">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-white/40 border border-white/[0.05] shrink-0">
                         {asset.symbol}
                       </span>
                     </div>
                   </div>
 
-                  {/* Network & Contract Standard Badges */}
+                  {/* Network & Standard Badges */}
                   <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    <span className={`text-[9px] border px-1.5 py-0.5 rounded-sm font-mono shrink-0 ${getChainBadgeStyle(asset.chainName)}`}>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${getChainBadgeStyle(asset.chainName)}`}>
                       {asset.chainName}
                     </span>
-                    <span className="font-mono text-[9px] text-white/35 uppercase px-1.5 py-0.5 rounded bg-white/[0.02] border border-white/[0.04] shrink-0">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.03] text-white/40 border border-white/[0.04]">
                       {asset.type}
                     </span>
                   </div>
@@ -265,39 +249,44 @@ export const ExportGateModal: React.FC<ExportGateModalProps> = ({
           </div>
         </div>
 
-        {/* Action Footer */}
-        <div className="flex items-center justify-between pt-2 border-t border-white/[0.05]">
-          <span className="text-[10px] text-white/40 font-mono">
-            {heldAssetIds.length > 0 
-              ? `${heldAssetIds.length} qualifying asset(s) verified` 
-              : isConnected 
-                ? '0 qualifying assets held' 
-                : 'Connect wallet to verify'}
+        {/* Footer Actions */}
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-[11px] font-mono text-white/40">
+            {isChecking
+              ? 'Scanning multi-chain balances...'
+              : `${heldAssetIds.length} qualifying asset(s) verified`}
           </span>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isChecking}
+              onClick={() => refetch()}
+              className="p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-white/60 hover:text-white transition-all cursor-pointer disabled:opacity-40"
+              title="Re-verify across all chains"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
+            </button>
+
             {isHoldingEligibleAsset ? (
               <button
                 type="button"
                 onClick={handleProceed}
-                className="px-4 py-1.5 rounded-md bg-white text-black text-[12px] font-semibold hover:bg-white/90 transition-all shadow-sm cursor-pointer"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-white text-black hover:bg-white/90 transition-all cursor-pointer shadow-lg shadow-white/5"
               >
                 Proceed to Export
               </button>
             ) : (
               <button
                 type="button"
-                onClick={() => refetch()}
-                disabled={isChecking || !isConnected}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium text-white/70 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all disabled:opacity-30 cursor-pointer"
+                disabled
+                className="px-4 py-2 text-xs font-mono font-medium rounded-lg bg-white/5 border border-white/10 text-white/30 cursor-not-allowed"
               >
-                <RefreshCw className={`w-3 h-3 ${isChecking ? 'animate-spin' : ''}`} />
-                <span>Re-verify Chains</span>
+                Access Locked
               </button>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

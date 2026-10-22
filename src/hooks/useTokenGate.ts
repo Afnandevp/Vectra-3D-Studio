@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
+import { useActiveAccount } from 'thirdweb/react';
 import { createPublicClient, http, fallback } from 'viem';
 import {
   BALANCE_OF_ABI,
@@ -129,13 +130,16 @@ async function fetchErc20BalanceDirect(
  * Users must verify that they are holding qualifying assets in the modal before full export access is unlocked.
  */
 export function useTokenGate(): TokenGateState {
-  const { address, isConnected } = useAccount();
+  // Sync address from Thirdweb with Wagmi fallback
+  const thirdwebAccount = useActiveAccount();
+  const { address: wagmiAddress, isConnected: isWagmiConnected } = useAccount();
+
+  const activeAddress = (thirdwebAccount?.address || wagmiAddress) as `0x${string}` | undefined;
+  const isConnected = !!thirdwebAccount || isWagmiConnected;
 
   // In-memory session verification state (resets on page reload / revisit)
   const isSessionVerified = useLogoStore((s) => s.isSessionVerified);
   const setIsSessionVerified = useLogoStore((s) => s.setIsSessionVerified);
-
-  const activeAddress = address;
 
   // Invalidate session verification if address changes or disconnects
   const prevAddressRef = useRef<string | undefined>(undefined);

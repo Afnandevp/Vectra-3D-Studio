@@ -1,5 +1,5 @@
-import { createConfig } from '@privy-io/wagmi';
-import { http, fallback } from 'wagmi';
+import { createConfig, http, fallback } from 'wagmi';
+import { injected } from 'wagmi/connectors';
 import {
   baseChain,
   monadNetwork,
@@ -7,12 +7,12 @@ import {
 } from './tokenConfig';
 
 /**
- * Multi-chain Wagmi configuration powered by @privy-io/wagmi
- * Natively synchronizes Privy's embedded wallets and external wallets (MetaMask, Coinbase, etc.)
- * across Base Mainnet, Monad Mainnet, and Robinhood Chain Testnet.
+ * Multi-chain Wagmi configuration for token gate RPC balance checks
+ * Chains: Base Mainnet, Monad Mainnet, Robinhood Chain Testnet
  */
 export const wagmiConfig = createConfig({
   chains: [baseChain, monadNetwork, robinhoodTestnet],
+  connectors: [injected()],
   transports: {
     [baseChain.id]: http('https://mainnet.base.org'),
     [monadNetwork.id]: fallback([

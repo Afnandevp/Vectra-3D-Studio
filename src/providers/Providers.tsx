@@ -1,6 +1,6 @@
 import React from 'react';
-import { PrivyProvider } from '@privy-io/react-auth';
-import { WagmiProvider } from '@privy-io/wagmi';
+import { ThirdwebProvider } from 'thirdweb/react';
+import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { wagmiConfig } from '../config/wagmi';
 
@@ -20,41 +20,19 @@ export interface ProvidersProps {
 
 /**
  * Universal Providers hierarchy:
- * 1. PrivyProvider (Embedded Wallet & Authentication)
- * 2. QueryClientProvider (TanStack React Query)
- * 3. WagmiProvider (from @privy-io/wagmi to natively sync Privy embedded/external wallets)
+ * 1. ThirdwebProvider (Thirdweb v5 SDK - In-App Wallets & Social Auth)
+ * 2. WagmiProvider (Wagmi v2 - Multi-Chain RPC Reads & Contract Calls)
+ * 3. QueryClientProvider (TanStack React Query)
  */
 export const Providers: React.FC<ProvidersProps> = ({ children }) => {
-  // Read Privy App ID from environment variable or fallback to developer demo ID
-  const appId =
-    (import.meta as any).env?.VITE_PRIVY_APP_ID ||
-    'clz8926k60032128v5x8b19e4';
-
   return (
-    <PrivyProvider
-      appId={appId}
-      config={{
-        appearance: {
-          theme: 'dark',
-          accentColor: '#FFFFFF',
-          logo: undefined,
-          showWalletLoginFirst: true,
-          walletList: ['metamask', 'coinbase_wallet', 'rainbow', 'wallet_connect'],
-        },
-        loginMethods: ['wallet', 'google', 'email'],
-        embeddedWallets: {
-          ethereum: {
-            createOnLogin: 'users-without-wallets',
-          },
-        },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>
+    <ThirdwebProvider>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
           {children}
-        </WagmiProvider>
-      </QueryClientProvider>
-    </PrivyProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </ThirdwebProvider>
   );
 };
 
